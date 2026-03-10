@@ -1,5 +1,7 @@
+// src/index.js
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 import { pool } from "./db.js";
 
 import usersRoutes from "./routes/users.routes.js";
@@ -8,41 +10,50 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import tripRoutes from "./routes/trip.routes.js";
 import bookingsRoutes from "./routes/bookings.routes.js";
 
+dotenv.config();
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // -------------------
 // MIDDLEWARE
 // -------------------
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || origin.startsWith("http://localhost") || origin.includes(".ngrok-free.app")) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+// -------------------
+// CORS MIDDLEWARE
+// -------------------
+const allowedOrigins = [
+  "http://localhost:5173", // local Vite frontend
+  "http://localhost:3000",
+  "http://127.0.0.1:5173",
+  "https://pamojaride-driver.vercel.app", // ✅ add your Vercel frontend
+];
 
-// Handle preflight requests
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow requests with no origin (like curl or mobile apps)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+
+// handle preflight
 app.options("*", cors());
 
-// Parse JSON request bodies
+// JSON parser
 app.use(express.json());
 
 // -------------------
 // ROUTES
 // -------------------
+app.get("/", (req, res) => res.send("🚀 Pamojaride Backend Running on localhost:5000!"));
 
-// Health check
-app.get("/", (req, res) => res.send("Pamojaride Backend Running!"));
-
-// Optional DB test
+// DB test
 app.get("/test-db", async (req, res) => {
   let conn;
   try {
@@ -50,28 +61,26 @@ app.get("/test-db", async (req, res) => {
     const [rows] = await conn.query("SELECT 1 AS test");
     res.json({ success: true, data: rows });
   } catch (err) {
-    console.error(err);
+    console.error("DB error:", err);
     res.status(500).json({ success: false, error: err.message });
   } finally {
     if (conn) conn.release();
   }
 });
 
-// -------------------
 // API ROUTES
-// -------------------
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/trips", tripRoutes);
 app.use("/api/bookings", bookingsRoutes);
 
-// Catch-all 404 for undefined API routes
+// Catch-all 404
 app.use("/api/*", (req, res) => {
   res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });
 });
 
-// Global error handler (optional)
+// Global error handler
 app.use((err, req, res, next) => {
   console.error("Global error:", err);
   res.status(500).json({ success: false, message: err.message || "Server error" });
