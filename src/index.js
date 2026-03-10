@@ -27,11 +27,13 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "https://pamojaride-driver.vercel.app", // ✅ add your Vercel frontend
 ];
-
 app.use(cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (like curl or mobile apps)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.includes("vercel.app")
+    ) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
