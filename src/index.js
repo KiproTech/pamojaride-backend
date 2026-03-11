@@ -56,16 +56,24 @@ app.use(express.json());
 app.get("/", (req, res) => res.send("🚀 Pamojaride Backend Running on localhost:5000!"));
 
 // DB test
+// src/index.js (or wherever your routes are)
 app.get("/test-db", async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
     const rows = await conn.query("SELECT 1 AS test");
 
-    // Convert any BigInt to string before sending JSON
-    const safeRows = JSON.parse(JSON.stringify(rows, (_, v) =>
-      typeof v === "bigint" ? v.toString() : v
-    ));
+    // Helper to convert BigInt → string
+    const serialize = (obj) => {
+      if (!obj) return obj;
+      const t = { ...obj };
+      for (const k in t) {
+        if (typeof t[k] === "bigint") t[k] = t[k].toString();
+      }
+      return t;
+    };
+
+    const safeRows = Array.isArray(rows) ? rows.map(serialize) : [serialize(rows)];
 
     res.json({ success: true, data: safeRows });
   } catch (err) {
