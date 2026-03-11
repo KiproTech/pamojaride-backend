@@ -60,8 +60,14 @@ app.get("/test-db", async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
-    const [rows] = await conn.query("SELECT 1 AS test");
-    res.json({ success: true, data: rows });
+    const rows = await conn.query("SELECT 1 AS test");
+
+    // Convert any BigInt to string before sending JSON
+    const safeRows = JSON.parse(JSON.stringify(rows, (_, v) =>
+      typeof v === "bigint" ? v.toString() : v
+    ));
+
+    res.json({ success: true, data: safeRows });
   } catch (err) {
     console.error("DB error:", err);
     res.status(500).json({ success: false, error: err.message });
@@ -69,7 +75,6 @@ app.get("/test-db", async (req, res) => {
     if (conn) conn.release();
   }
 });
-
 // API ROUTES
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
