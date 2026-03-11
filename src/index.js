@@ -61,7 +61,9 @@ app.get("/test-db", async (req, res) => {
   try {
     conn = await pool.getConnection();
     const rows = await conn.query("SELECT 1 AS test");
-    const safeRows = JSON.parse(JSON.stringify(rows, (_, v) => typeof v === "bigint" ? v.toString() : v));
+    const safeRows = JSON.parse(JSON.stringify(rows, (_, v) =>
+      typeof v === "bigint" ? v.toString() : v
+    ));
     res.json({ success: true, data: safeRows });
   } catch (err) {
     console.error("DB error:", err);
