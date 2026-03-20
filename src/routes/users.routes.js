@@ -1,4 +1,4 @@
-// src/routes/users.routes.js
+// routes/users.routes.js
 import { Router } from "express";
 import {
   getAllUsers,
@@ -7,6 +7,12 @@ import {
   forgotPassword,
   resetPassword,
   getUserSettings,
+  getPassengerProfile,
+  updatePassengerProfile,
+  changePassengerPassword,
+  upload, 
+  updateProfilePicture,
+  // updateDriverProfilePicture, // <-- new
 } from "../controllers/users.controller.js";
 
 import { authenticate } from "../middleware/auth.js";
@@ -14,25 +20,50 @@ import { authenticate } from "../middleware/auth.js";
 const router = Router();
 
 // -------------------
-// USER ROUTES
+// AUTHENTICATED ROUTES
 // -------------------
-
-// Get logged-in user's full settings
 router.get("/settings", authenticate, getUserSettings);
 
-// Get all users
-router.get("/", getAllUsers);
+router.get(
+  "/passenger/profile",
+  authenticate("passenger"),
+  getPassengerProfile
+);
 
-// Get user by ID
+// -------------------
+// PUBLIC ROUTES
+// -------------------
+router.post("/signup", registerUser);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
+
+// -------------------
+// USER FETCH ROUTES
+// -------------------
+router.get("/", getAllUsers);
 router.get("/:id", getUserById);
 
-// Register a new user
-router.post("/signup", registerUser);
+router.put("/profile", authenticate("passenger"), updatePassengerProfile);
+router.put("/change-password", authenticate("passenger"), changePassengerPassword);
 
-// Forgot password
-router.post("/forgot-password", forgotPassword);
+// -------------------
+// PROFILE PICTURE UPLOAD
+// -------------------
 
-// Reset password
-router.post("/reset-password", resetPassword);
+// Passenger
+router.patch(
+  "/profile-picture",
+  authenticate("passenger"),          // passenger auth
+  upload.single("profile_picture"),
+  updateProfilePicture
+);
+
+// // Driver
+// router.patch(
+//   "/driver/profile-picture",
+//   authenticate("driver"),            // driver auth
+//   upload.single("profile_picture"),  // multer middleware
+//   updateDriverProfilePicture         // driver controller
+// );
 
 export default router;

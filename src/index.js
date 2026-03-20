@@ -16,24 +16,17 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // -------------------
-// MIDDLEWARE
-// -------------------
-// -------------------
 // CORS MIDDLEWARE
 // -------------------
 const allowedOrigins = [
   "http://localhost:5173", // local Vite frontend
   "http://localhost:3000",
   "http://127.0.0.1:5173",
-  "https://pamojaride-driver.vercel.app", // ✅ add your Vercel frontend
+  "https://pamojaride-driver.vercel.app",
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      origin.includes("vercel.app")
-    ) {
+    if (!origin || allowedOrigins.includes(origin) || origin.includes("vercel.app")) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
@@ -44,11 +37,18 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
 
-// handle preflight
+// Handle preflight requests
 app.options("*", cors());
 
+// -------------------
 // JSON parser
+// -------------------
 app.use(express.json());
+
+// -------------------
+// Serve static files (uploads)
+// -------------------
+app.use("/uploads", express.static("uploads"));
 
 // -------------------
 // ROUTES
@@ -72,6 +72,7 @@ app.get("/test-db", async (req, res) => {
     if (conn) conn.release();
   }
 });
+
 // API ROUTES
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);

@@ -144,3 +144,266 @@ export const login = async (req, res) => {
     if (conn) conn.release();
   }
 };
+
+
+export const passengerRegister = async (req, res) => {
+  const { full_name, email, phone, password } = req.body;
+
+  // ---- Validation ----
+  if (!full_name || !email || !phone || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "All fields are required",
+    });
+  }
+
+  if (full_name.trim().split(" ").length < 2) {
+    return res.status(400).json({
+      success: false,
+      message: "Full name must contain at least two words",
+    });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid email address",
+    });
+  }
+
+  const phoneRegex = /^\d{10,12}$/;
+  if (!phoneRegex.test(phone)) {
+    return res.status(400).json({
+      success: false,
+      message: "Phone number must be 10–12 digits",
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be at least 6 characters",
+    });
+  }
+
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    // ---- Check if email or phone exists ----
+    const existingRows = await conn.query(
+      `SELECT id FROM passengers WHERE email = ? OR phone = ? LIMIT 1`,
+      [email, phone]
+    );
+
+    if (existingRows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Email or phone already registered",
+      });
+    }
+
+    // ---- Hash password ----
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // ---- Insert new passenger ----
+    await conn.query(
+      `INSERT INTO passengers (full_name, email, phone, password_hash)
+       VALUES (?, ?, ?, ?)`,
+      [full_name, email, phone, passwordHash]
+    );
+
+    // ✅ Success response (NO auto-login)
+    return res.status(201).json({
+      success: true,
+      message: "Registration successful. Please log in to continue.",
+    });
+
+  } catch (err) {
+    console.error("Passenger register error:", err);
+
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({
+        success: false,
+        message: "Email or phone already registered",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+
+
+// ================= PASSENGER LOGIN =================
+export const passengerLogin = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Email and password are required",
+    });
+  }
+
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const rows = await conn.query(
+      `SELECT id, full_name, email, password_hash, phone, profile_picture
+       FROM passengers WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    if (!rows.length) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    const passenger = rows[0];
+
+    const match = await bcrypt.compare(password, passenger.password_hash);
+
+    if (!match) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password",
+      });
+    }
+
+    delete passenger.password_hash;
+
+    const safePassenger = serializeUser(passenger);
+
+    const token = jwt.sign(
+      { id: safePassenger.id, email: safePassenger.email, role: "passenger" },
+      process.env.JWT_SECRET || "your_jwt_secret",
+      { expiresIn: "1d" }
+    );
+
+    res.json({
+      success: true,
+      passenger: safePassenger,
+      token,
+    });
+
+  } catch (err) {
+    console.error("Passenger login error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+// ================= VERIFY PASSENGER EMAIL =================
+export const verifyPassengerEmail = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: "Email is required",
+    });
+  }
+
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const rows = await conn.query(
+      `SELECT id FROM passengers WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Email not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Email verified",
+    });
+
+  } catch (err) {
+    console.error("Verify email error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+// ================= RESET PASSENGER PASSWORD =================
+export const resetPassengerPassword = async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Email and password are required",
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "Password must be at least 6 characters",
+    });
+  }
+
+  let conn;
+
+  try {
+    conn = await pool.getConnection();
+
+    const rows = await conn.query(
+      `SELECT id FROM passengers WHERE email = ? LIMIT 1`,
+      [email]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    await conn.query(
+      `UPDATE passengers SET password_hash = ?, updated_at = NOW() WHERE email = ?`,
+      [passwordHash, email]
+    );
+
+    return res.json({
+      success: true,
+      message: "Password updated successfully",
+    });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  } finally {
+    if (conn) conn.release();
+  }
+};

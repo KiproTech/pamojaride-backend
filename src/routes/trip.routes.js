@@ -1,3 +1,4 @@
+// src/routes/trip.routes.js
 import express from "express";
 import {
   getTrips,
@@ -7,29 +8,63 @@ import {
   cancelTrip,
   viewTrip,
   getRatingsSummary,
-  getRatingsForDriver, // used for /ratings/list
+  getRatingsForDriver,
+  getAvailableTrips,
+  bookTrip,
+  getPassengerNotifications,
+
+  // ✅ Passenger dashboard
+  getPassengerTrips,
+  getUpcomingTrips,
+  getDashboardStats,
+
+  // ✅ Passenger actions
+  cancelBooking,
+  completeBooking,
+  markNotificationsAsRead
 } from "../controllers/trip.controller.js";
 
 import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Apply authentication to all routes
-router.use(authenticate);
-
-// ---------------- TRIPS ----------------
-router.get("/", getTrips);
-router.post("/", createTrip);
-router.patch("/:id/start", startTrip);
-router.patch("/:id/complete", completeTrip);
-router.patch("/:id/cancel", cancelTrip);
-router.get("/:id/view", viewTrip);
+// ---------------- DRIVER ROUTES ----------------
+router.get("/", authenticate("driver"), getTrips);
+router.post("/", authenticate("driver"), createTrip);
+router.patch("/:id/start", authenticate("driver"), startTrip);
+router.patch("/:id/complete", authenticate("driver"), completeTrip);
+router.patch("/:id/cancel", authenticate("driver"), cancelTrip);
+router.get("/:id/view", authenticate("driver"), viewTrip);
 
 // ---------------- RATINGS ----------------
-// Ratings summary for authenticated driver
-router.get("/ratings/summary", getRatingsSummary);
+router.get("/ratings/summary", authenticate("driver"), getRatingsSummary);
+router.get("/ratings/list", authenticate("driver"), getRatingsForDriver);
 
-// Ratings list for authenticated driver
-router.get("/ratings/list", getRatingsForDriver);
+// ---------------- PASSENGER ROUTES ----------------
+
+// 🔹 Available trips
+router.get("/available", authenticate("passenger"), getAvailableTrips);
+
+// 🔹 Book trip
+router.post("/book", authenticate("passenger"), bookTrip);
+
+// 🔹 Current (ONGOING trip)
+router.get("/current", authenticate("passenger"), getPassengerTrips);
+
+// 🔹 Upcoming booked trips
+router.get("/upcoming", authenticate("passenger"), getUpcomingTrips);
+
+// 🔹 Dashboard stats (cards)
+router.get("/stats", authenticate("passenger"), getDashboardStats);
+
+// 🔹 Cancel booking
+router.patch("/booking/:bookingId/cancel", authenticate("passenger"), cancelBooking);
+
+// 🔹 Complete trip
+router.patch("/booking/:bookingId/complete", authenticate("passenger"), completeBooking);
+
+// 🔹 Notifications
+router.get("/notifications", authenticate("passenger"), getPassengerNotifications);
+router.patch("/notifications/read", authenticate("passenger"), markNotificationsAsRead);
 
 export default router;

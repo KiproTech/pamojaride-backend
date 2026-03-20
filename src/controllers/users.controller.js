@@ -3,6 +3,9 @@ import { pool } from "../db.js";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 
 // Helper to convert BigInt to string for JSON
 const serialize = (data) => {
@@ -275,4 +278,265 @@ export const getUserSettings = async (req, res) => {
     console.error("Settings error:", err);
     res.status(500).json({ success: false, message: "Failed to fetch user settings" });
   }
+};
+
+
+
+//Passenger
+
+
+// ---------------- PASSENGER ----------------
+// src/controllers/users.controller.js
+
+const toLocalDatetime = (datetime) => {
+  if (!datetime) return null;
+  // Convert MariaDB DATETIME to ISO format for JS
+  const dt = new Date(datetime.replace(" ", "T"));
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}:${String(dt.getSeconds()).padStart(2,'0')}`;
+};
+
+// ---------- GET PASSENGER PROFILE ----------
+export const getPassengerProfile = async (req, res) => {
+  try {
+    const passengerId = Number(req.user.id);
+    if (!passengerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const result = await pool.query(
+      `SELECT 
+         id,
+         full_name,
+         email,
+         phone,
+         profile_picture,
+         date_of_birth,
+         gender,
+         status AS account_status,
+         created_at,
+         updated_at
+       FROM passengers
+       WHERE id = ?`,
+      [passengerId]
+    );
+
+    const rows = Array.isArray(result[0]) ? result[0] : result;
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: "Passenger not found" });
+    }
+
+    const passenger = serialize(rows[0]);
+
+    // Optionally convert timestamps
+    passenger.created_at = toLocalDatetime(passenger.created_at);
+    passenger.updated_at = toLocalDatetime(passenger.updated_at);
+
+    return res.json({ success: true, data: passenger });
+
+  } catch (error) {
+    console.error("Passenger profile error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+// ---------- UPDATE PASSENGER PROFILE ----------
+
+export const updatePassengerProfile = async (req, res) => {
+  let conn;
+  try {
+    const passengerId = Number(req.user.id);
+    if (!passengerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { full_name, email, phone } = req.body;
+
+    conn = await pool.getConnection();
+
+    // 1️⃣ Check if email exists for another passenger
+    const emailCheck = await conn.query(
+      "SELECT id FROM passengers WHERE email = ? AND id != ? LIMIT 1",
+      [email, passengerId]
+    );
+
+    if (emailCheck && emailCheck.length > 0) {
+      return res.status(400).json({ success: false, message: "Email already in use by another account" });
+    }
+
+    // 2️⃣ Update passenger profile
+    const result = await conn.query(
+      `UPDATE passengers
+       SET full_name = ?, email = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [full_name, email, phone, passengerId]
+    );
+
+    if (!result || result.affectedRows === 0) {
+      return res.status(400).json({ success: false, message: "Profile update failed" });
+    }
+
+    // 3️⃣ Fetch updated profile
+    const [rows] = await conn.query(
+      "SELECT id, full_name, email, phone, created_at, updated_at FROM passengers WHERE id = ?",
+      [passengerId]
+    );
+
+    const profile = rows[0];
+    return res.json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        id: profile.id.toString(),
+        full_name: profile.full_name,
+        email: profile.email,
+        phone: profile.phone,
+        created_at: profile.created_at ? toLocalDatetime(profile.created_at) : null,
+        updated_at: profile.updated_at ? toLocalDatetime(profile.updated_at) : null
+      }
+    });
+
+  } catch (err) {
+    console.error("updatePassengerProfile error:", err);
+    return res.status(500).json({ success: false, message: "Server error while updating profile" });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+
+// ---------- CHANGE PASSENGER PASSWORD ----------
+
+export const changePassengerPassword = async (req, res) => {
+  let conn;
+  try {
+    const passengerId = Number(req.user.id);
+    if (!passengerId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const { old_password, new_password } = req.body;
+    if (!old_password || !new_password) {
+      return res.status(400).json({ success: false, message: "Old and new passwords are required" });
+    }
+
+    conn = await pool.getConnection();
+
+    // 1️⃣ Fetch current hashed password
+    const result = await conn.query(
+      "SELECT password_hash FROM passengers WHERE id = ?",
+      [passengerId]
+    );
+
+    // Normalize result for MariaDB/MySQL2
+    const rows = Array.isArray(result[0]) ? result[0] : result;
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Passenger not found" });
+    }
+
+    const hashedPassword = rows[0].password_hash;
+
+    // 2️⃣ Verify old password
+    const isMatch = await bcrypt.compare(old_password, hashedPassword);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Old password is incorrect" });
+    }
+
+    // 3️⃣ Hash new password
+    const newHashed = await bcrypt.hash(new_password, 10);
+
+    // 4️⃣ Update password
+    await conn.query(
+      "UPDATE passengers SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [newHashed, passengerId]
+    );
+
+    return res.json({ success: true, message: "Password updated successfully" });
+
+  } catch (err) {
+    console.error("changePassengerPassword error:", err);
+    return res.status(500).json({ success: false, message: "Server error while updating password" });
+  } finally {
+    if (conn) conn.release();
+  }
+};
+
+
+// update profile
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = "./uploads/profile_pictures";
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    cb(null, `user_${req.user.id}${ext}`);
+  }
+});
+
+export const upload = multer({ storage });
+
+// -------------------------
+// PATCH /api/passenger/profile-picture
+// -------------------------
+// export const updateProfilePicture = async (req, res) => {
+//   let conn;
+//   try {
+//     const passengerId = Number(req.user.id);
+//     if (!passengerId) return res.status(401).json({ success: false, message: "Unauthorized" });
+//     if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+//     const filePath = `/uploads/profile_pictures/${req.file.filename}`;
+
+//     conn = await pool.getConnection();
+//     await conn.query(
+//       "UPDATE passengers SET profile_picture = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+//       [filePath, passengerId]
+//     );
+
+//     return res.json({ success: true, message: "Profile picture updated", profile_picture: filePath });
+//   } catch (err) {
+//     console.error("updateProfilePicture error:", err);
+//     return res.status(500).json({ success: false, message: "Server error while updating profile picture" });
+//   } finally {
+//     if (conn) conn.release();
+//   }
+// };
+
+
+//update driver profile
+export const updateProfilePicture = async (file) => {
+  if (!file) throw new Error("No file provided");
+
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("profile_picture", file);
+
+  const res = await fetch(`${BASE_URL}/users/profile-picture`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      // Content-Type is NOT set, let browser handle FormData
+    },
+    body: formData,
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    notify(data.message || "Image upload failed", "error");
+    throw new Error(data.message || "Image upload failed");
+  }
+
+  // ✅ Update localStorage passenger object
+  const passenger = JSON.parse(localStorage.getItem("passenger")) || {};
+  passenger.profile_picture = data.profile_picture;
+  localStorage.setItem("passenger", JSON.stringify(passenger));
+
+  notify("Profile picture updated!");
+  return data;
 };
