@@ -40,10 +40,7 @@ app.use(
   })
 );
 
-// -------------------
-// Handle preflight requests (only for API routes)
-// -------------------
-app.options("/api/*", cors());
+// ❌ REMOVE app.options completely
 
 // -------------------
 // JSON parser
@@ -51,14 +48,16 @@ app.options("/api/*", cors());
 app.use(express.json());
 
 // -------------------
-// Serve static files (uploads)
+// Serve static files
 // -------------------
 app.use("/uploads", express.static("uploads"));
 
 // -------------------
 // ROUTES
 // -------------------
-app.get("/", (req, res) => res.send("🚀 Pamojaride Backend Running!"));
+app.get("/", (req, res) => {
+  res.send("🚀 Pamojaride Backend Running!");
+});
 
 // DB test
 app.get("/test-db", async (req, res) => {
@@ -66,9 +65,11 @@ app.get("/test-db", async (req, res) => {
   try {
     conn = await pool.getConnection();
     const rows = await conn.query("SELECT 1 AS test");
+
     const safeRows = JSON.parse(
       JSON.stringify(rows, (_, v) => (typeof v === "bigint" ? v.toString() : v))
     );
+
     res.json({ success: true, data: safeRows });
   } catch (err) {
     console.error("DB error:", err);
@@ -86,26 +87,24 @@ app.use("/api/trips", tripRoutes);
 app.use("/api/bookings", bookingsRoutes);
 
 // -------------------
-// Catch-all 404 for unknown API routes
+// Catch-all 404
 // -------------------
-app.use("/api/*", (req, res) => {
-  res.status(404).json({ success: false, message: `Cannot ${req.method} ${req.originalUrl}` });
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Cannot ${req.method} ${req.originalUrl}`,
+  });
 });
-
-// -------------------
-// Optional catch-all for frontend SPA (if you host a React/Vite build)
-// -------------------
-// import path from "path";
-// app.get("*", (req, res) => {
-//   res.sendFile(path.join(__dirname, "../client/dist/index.html"));
-// });
 
 // -------------------
 // Global error handler
 // -------------------
 app.use((err, req, res, next) => {
   console.error("Global error:", err);
-  res.status(500).json({ success: false, message: err.message || "Server error" });
+  res.status(500).json({
+    success: false,
+    message: err.message || "Server error",
+  });
 });
 
 // -------------------
