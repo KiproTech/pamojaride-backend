@@ -1,10 +1,10 @@
-import mariadb from "mariadb";
+import { createPool } from "mariadb";
 import dotenv from "dotenv";
 dotenv.config();
 
 const isProduction = process.env.NODE_ENV === "production";
 
-export const pool = mariadb.createPool({
+export const pool = createPool({
   host: isProduction ? process.env.DB_HOST : "localhost",
   user: isProduction ? process.env.DB_USER : "root",
   password: isProduction ? process.env.DB_PASSWORD : "Kiprotich1069",
